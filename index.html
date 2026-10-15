@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pedidos de Clientes — NASE</title>
+<style>
+  :root {
+    --nase-primary: #1FADAE;
+    --nase-primary-dark: #148587;
+    --nase-secondary: #0E6C99;
+    --bg: #eef2f5;
+    --panel: #ffffff;
+    --text: #1c2b33;
+    --text-dim: #5c6b73;
+    --bubble-user: #0E6C99;
+    --bubble-bot: #ffffff;
+    --border: #dfe6ea;
+    --danger: #c0392b;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: calc(14px + var(--safe-top)) 16px 14px;
+    background: linear-gradient(135deg, var(--nase-secondary), var(--nase-primary));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  }
+  header img { height: 34px; display: block; }
+  header .titles { display: flex; flex-direction: column; min-width: 0; }
+  header h1 { font-size: 1.05rem; margin: 0; font-weight: 700; }
+  header p { font-size: .76rem; margin: 2px 0 0; opacity: .9; }
+
+  main {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .msg {
+    max-width: 82%;
+    padding: 10px 13px;
+    border-radius: 14px;
+    line-height: 1.42;
+    font-size: .94rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: var(--bubble-bot);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--bubble-user);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.error {
+    align-self: flex-start;
+    background: #fdecea;
+    color: var(--danger);
+    border: 1px solid #f3c6c1;
+    border-bottom-left-radius: 4px;
+  }
+  .typing {
+    align-self: flex-start;
+    display: flex;
+    gap: 4px;
+    padding: 12px 14px;
+    background: var(--bubble-bot);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    border-bottom-left-radius: 4px;
+  }
+  .typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-dim);
+    animation: bounce 1.2s infinite ease-in-out;
+  }
+  .typing span:nth-child(2) { animation-delay: .15s; }
+  .typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+  footer {
+    flex: 0 0 auto;
+    padding: 10px 12px calc(10px + var(--safe-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  .inputRow {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  textarea#textInput {
+    flex: 1;
+    resize: none;
+    max-height: 110px;
+    min-height: 42px;
+    padding: 10px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    font-size: .95rem;
+    font-family: inherit;
+    line-height: 1.3;
+    outline: none;
+  }
+  textarea#textInput:focus { border-color: var(--nase-primary); }
+  button.round {
+    flex: 0 0 auto;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    transition: transform .1s ease, background .15s ease;
+  }
+  button.round:active { transform: scale(.92); }
+  #sendBtn { background: var(--nase-secondary); }
+  #sendBtn:disabled { background: #b7c2c8; cursor: default; }
+  #micBtn { background: var(--nase-primary); }
+  #micBtn.recording { background: var(--danger); animation: pulse 1s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(192,57,43,.45); } 70% { box-shadow: 0 0 0 10px rgba(192,57,43,0); } 100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); } }
+  .micHint {
+    text-align: center;
+    font-size: .72rem;
+    color: var(--text-dim);
+    margin-top: 6px;
+    min-height: 14px;
+  }
+  svg { width: 20px; height: 20px; fill: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="https://nasecanarias.es/wp-content/uploads/2023/09/NASE-Logo-2.png" alt="NASE">
+  <div class="titles">
+    <h1>Pedidos de Clientes</h1>
+    <p>Dicta el pedido de un cliente, por texto o por voz</p>
+  </div>
+</header>
+
+<main id="messages"></main>
+
+<footer>
+  <div class="inputRow">
+    <textarea id="textInput" rows="1" placeholder="Escribe el pedido..."></textarea>
+    <button class="round" id="micBtn" title="Mantén pulsado para hablar">
+      <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+    </button>
+    <button class="round" id="sendBtn" title="Enviar">
+      <svg viewBox="0 0 24 24"><path d="M3 11.5 21 3l-6 18-4.5-7.5L3 11.5Z"/></svg>
+    </button>
+  </div>
+  <div class="micHint" id="micHint">Mantén pulsado el micrófono para grabar un audio</div>
+</footer>
+
+<script>
+(function () {
+  const CHAT_WEBHOOK = 'https://n8n.castelloia.com/webhook/nase-bot-pedidos-comercial/chat';
+  const TRANSCRIBE_WEBHOOK = 'https://n8n.castelloia.com/webhook/nase-transcribir-audio-pedidos';
+
+  const messagesEl = document.getElementById('messages');
+  const textInput = document.getElementById('textInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const micBtn = document.getElementById('micBtn');
+  const micHint = document.getElementById('micHint');
+
+  function getSessionId() {
+    try {
+      let id = localStorage.getItem('nase_pedidos_session_id');
+      if (!id) {
+        id = 'comercial-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('nase_pedidos_session_id', id);
+      }
+      return id;
+    } catch (e) {
+      return 'comercial-' + Date.now();
+    }
+  }
+  const sessionId = getSessionId();
+
+  function scrollToEnd() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function addMessage(text, cls) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + cls;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    scrollToEnd();
+    return div;
+  }
+
+  function addTyping() {
+    const div = document.createElement('div');
+    div.className = 'typing';
+    div.id = 'typingIndicator';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    messagesEl.appendChild(div);
+    scrollToEnd();
+  }
+  function removeTyping() {
+    const el = document.getElementById('typingIndicator');
+    if (el) el.remove();
+  }
+
+  addMessage('¡Hola! 👋 Soy el asistente de pedidos de NASE para comerciales.\nDime el cliente y lo que quieres pedirle, por ejemplo:\n"Apunta un pedido para Casa Odón: 2 papel chemine 800"\nTambién puedes mantener pulsado el micrófono y decírmelo hablando.', 'bot');
+
+  async function sendToAgent(text) {
+    sendBtn.disabled = true;
+    addTyping();
+    try {
+      const resp = await fetch(CHAT_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sendMessage', chatInput: text, sessionId: sessionId })
+      });
+      removeTyping();
+      if (!resp.ok) {
+        addMessage('No he podido conectar con el asistente (error ' + resp.status + '). Inténtalo de nuevo.', 'error');
+        return;
+      }
+      const data = await resp.json();
+      addMessage(data.output || data.text || 'No he recibido respuesta, inténtalo de nuevo.', 'bot');
+    } catch (err) {
+      removeTyping();
+      addMessage('Error de conexión. Comprueba tu internet e inténtalo de nuevo.', 'error');
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  function sendTextMessage() {
+    const text = textInput.value.trim();
+    if (!text) return;
+    addMessage(text, 'user');
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendToAgent(text);
+  }
+
+  sendBtn.addEventListener('click', sendTextMessage);
+  textInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendTextMessage();
+    }
+  });
+  textInput.addEventListener('input', function () {
+    textInput.style.height = 'auto';
+    textInput.style.height = Math.min(textInput.scrollHeight, 110) + 'px';
+  });
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let recording = false;
+  let stream = null;
+
+  async function startRecording() {
+    if (recording) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      addMessage('Este navegador no soporta grabación de audio. Prueba con Chrome o Edge actualizados.', 'error');
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      let msg = 'No he podido acceder al micrófono (' + (err && err.name ? err.name : 'error desconocido') + ').';
+      if (err && err.name === 'NotAllowedError') msg += ' El micrófono está bloqueado para este sitio. Haz clic en el candado junto a la URL, pon Micrófono en Permitir, y recarga.';
+      else if (err && err.name === 'NotFoundError') msg += ' No se ha detectado ningún micrófono conectado.';
+      else if (err && err.name === 'NotReadableError') msg += ' Otro programa está usando el micrófono ahora mismo.';
+      addMessage(msg, 'error');
+      return;
+    }
+    audioChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = onRecordingStop;
+    mediaRecorder.start();
+    recording = true;
+    micBtn.classList.add('recording');
+    micHint.textContent = 'Grabando… suelta para enviar';
+  }
+
+  function stopRecording() {
+    if (!recording || !mediaRecorder) return;
+    recording = false;
+    micBtn.classList.remove('recording');
+    micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio';
+    try { mediaRecorder.stop(); } catch (e) {}
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); }
+  }
+
+  async function onRecordingStop() {
+    if (audioChunks.length === 0) return;
+    const blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+    if (blob.size < 1000) {
+      micHint.textContent = 'Audio demasiado corto, inténtalo de nuevo';
+      setTimeout(function () { micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio'; }, 2500);
+      return;
+    }
+    micHint.textContent = 'Transcribiendo audio…';
+    const form = new FormData();
+    form.append('data', blob, 'audio.webm');
+    try {
+      const resp = await fetch(TRANSCRIBE_WEBHOOK, { method: 'POST', body: form });
+      micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio';
+      if (!resp.ok) {
+        addMessage('No he podido transcribir el audio (error ' + resp.status + '). Inténtalo de nuevo o escríbelo.', 'error');
+        return;
+      }
+      const data = await resp.json();
+      const text = (data.text || '').trim();
+      if (!text) {
+        addMessage('No he entendido el audio. Inténtalo de nuevo o escríbelo.', 'error');
+        return;
+      }
+      addMessage(text, 'user');
+      sendToAgent(text);
+    } catch (err) {
+      micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio';
+      addMessage('Error de conexión al transcribir el audio. Inténtalo de nuevo.', 'error');
+    }
+  }
+
+  micBtn.addEventListener('mousedown', startRecording);
+  micBtn.addEventListener('mouseup', stopRecording);
+  micBtn.addEventListener('mouseleave', function () { if (recording) stopRecording(); });
+  micBtn.addEventListener('touchstart', function (e) { e.preventDefault(); startRecording(); }, { passive: false });
+  micBtn.addEventListener('touchend', function (e) { e.preventDefault(); stopRecording(); }, { passive: false });
+  micBtn.addEventListener('touchcancel', function () { if (recording) stopRecording(); });
+
+})();
+</script>
+
+</body>
+</html>

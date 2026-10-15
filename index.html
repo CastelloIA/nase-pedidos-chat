@@ -289,7 +289,15 @@
       return;
     }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 48000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
     } catch (err) {
       let msg = 'No he podido acceder al micrófono (' + (err && err.name ? err.name : 'error desconocido') + ').';
       if (err && err.name === 'NotAllowedError') msg += ' El micrófono está bloqueado para este sitio. Haz clic en el candado junto a la URL, pon Micrófono en Permitir, y recarga.';
@@ -299,8 +307,10 @@
       return;
     }
     audioChunks = [];
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
-    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const candidates = ['audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/webm', 'audio/mp4'];
+    const mimeType = candidates.find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+    const recorderOpts = mimeType ? { mimeType, audioBitsPerSecond: 160000 } : { audioBitsPerSecond: 160000 };
+    mediaRecorder = new MediaRecorder(stream, recorderOpts);
     mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = onRecordingStop;
     mediaRecorder.start();
@@ -320,15 +330,17 @@
 
   async function onRecordingStop() {
     if (audioChunks.length === 0) return;
-    const blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+    const actualType = (audioChunks[0] && audioChunks[0].type) || (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+    const blob = new Blob(audioChunks, { type: actualType });
     if (blob.size < 1000) {
       micHint.textContent = 'Audio demasiado corto, inténtalo de nuevo';
       setTimeout(function () { micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio'; }, 2500);
       return;
     }
     micHint.textContent = 'Transcribiendo audio…';
+    const ext = actualType.indexOf('mp4') !== -1 ? 'm4a' : 'webm';
     const form = new FormData();
-    form.append('data', blob, 'audio.webm');
+    form.append('data', blob, 'audio.' + ext);
     try {
       const resp = await fetch(TRANSCRIBE_WEBHOOK, { method: 'POST', body: form });
       micHint.textContent = 'Mantén pulsado el micrófono para grabar un audio';

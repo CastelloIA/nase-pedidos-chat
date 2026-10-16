@@ -44,9 +44,21 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.12);
   }
   header img { height: 34px; display: block; }
-  header .titles { display: flex; flex-direction: column; min-width: 0; }
+  header .titles { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   header h1 { font-size: 1.05rem; margin: 0; font-weight: 700; }
   header p { font-size: .76rem; margin: 2px 0 0; opacity: .9; }
+  #newChatBtn {
+    flex: 0 0 auto;
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.4);
+    color: #fff;
+    font-size: .76rem;
+    padding: 7px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #newChatBtn:active { background: rgba(255,255,255,.3); }
 
   main {
     flex: 1 1 auto;
@@ -162,6 +174,7 @@
     <h1>Pedidos de Clientes</h1>
     <p>Dicta el pedido de un cliente, por texto o por voz</p>
   </div>
+  <button id="newChatBtn" title="Empezar una conversación nueva, sin recordar el pedido anterior">🔄 Nuevo pedido</button>
 </header>
 
 <main id="messages"></main>
@@ -189,6 +202,12 @@
   const sendBtn = document.getElementById('sendBtn');
   const micBtn = document.getElementById('micBtn');
   const micHint = document.getElementById('micHint');
+  const newChatBtn = document.getElementById('newChatBtn');
+
+  newChatBtn.addEventListener('click', function () {
+    try { localStorage.removeItem('nase_pedidos_session_id'); } catch (e) {}
+    location.reload();
+  });
 
   function getSessionId() {
     try {

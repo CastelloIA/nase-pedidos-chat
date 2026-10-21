@@ -96,6 +96,22 @@
     border: 1px solid #f3c6c1;
     border-bottom-left-radius: 4px;
   }
+  .daySep {
+    align-self: center;
+    background: #dde7ec;
+    color: var(--text-dim);
+    font-size: .72rem;
+    padding: 4px 12px;
+    border-radius: 10px;
+    margin: 6px 0 2px;
+  }
+  .msg .hora {
+    display: block;
+    font-size: .66rem;
+    opacity: .6;
+    text-align: right;
+    margin-top: 3px;
+  }
   .typing {
     align-self: flex-start;
     display: flex;
@@ -174,7 +190,7 @@
     <h1>Pedidos de Clientes</h1>
     <p>Dicta el pedido de un cliente, por texto o por voz</p>
   </div>
-  <button id="newChatBtn" title="Empezar una conversación nueva, sin recordar el pedido anterior">🔄 Nuevo pedido</button>
+  <button id="newChatBtn" title="Borrar esta conversación y empezar una nueva">🔄 Nuevo pedido</button>
 </header>
 
 <main id="messages"></main>
@@ -205,7 +221,8 @@
   const newChatBtn = document.getElementById('newChatBtn');
 
   newChatBtn.addEventListener('click', function () {
-    try { localStorage.removeItem('nase_pedidos_session_id'); } catch (e) {}
+    if (!confirm('¿Empezar una conversación nueva? Se borrará la conversación guardada en este dispositivo (los pedidos ya creados siguen en Delsol).')) return;
+    try { localStorage.removeItem('nase_pedidos_session_id'); localStorage.removeItem(HIST_KEY); } catch (e) {}
     location.reload();
   });
 
@@ -227,14 +244,57 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function addMessage(text, cls) {
+  // Historial como en WhatsApp: los mensajes del usuario y del bot se guardan en este dispositivo
+  // y se vuelven a pintar al abrir, agrupados por dia. Solo se borra con el boton "Nuevo pedido".
+  const HIST_KEY = 'nase_pedidos_session_id_historial';
+  function cargarHistorial() {
+    try { const h = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); return Array.isArray(h) ? h : []; } catch (e) { return []; }
+  }
+  function guardarEnHistorial(ts, cls, text) {
+    try {
+      const h = cargarHistorial();
+      h.push({ t: ts, c: cls, x: text });
+      while (h.length > 1 && JSON.stringify(h).length > 2000000) h.shift(); // limite del navegador: se van los mas antiguos
+      localStorage.setItem(HIST_KEY, JSON.stringify(h));
+    } catch (e) {}
+  }
+  function inicioDia(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+  function etiquetaDia(ts) {
+    const d = new Date(ts);
+    const dias = Math.round((inicioDia(new Date()) - inicioDia(d)) / 86400000);
+    if (dias === 0) return 'Hoy';
+    if (dias === 1) return 'Ayer';
+    const s = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  let ultimoDia = null;
+  function separadorDia(ts) {
+    const k = inicioDia(new Date(ts));
+    if (k === ultimoDia) return;
+    ultimoDia = k;
+    const sep = document.createElement('div');
+    sep.className = 'daySep';
+    sep.textContent = etiquetaDia(ts);
+    messagesEl.appendChild(sep);
+  }
+  function addMessage(text, cls, opts) {
+    opts = opts || {};
+    const ts = opts.ts || Date.now();
+    separadorDia(ts);
     const div = document.createElement('div');
     div.className = 'msg ' + cls;
     div.textContent = text;
+    const hora = document.createElement('span');
+    hora.className = 'hora';
+    hora.textContent = new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    div.appendChild(hora);
     messagesEl.appendChild(div);
+    if (!opts.ts && !opts.noGuardar && (cls === 'user' || cls === 'bot')) guardarEnHistorial(ts, cls, text);
     scrollToEnd();
     return div;
   }
+  const historialPrevio = cargarHistorial();
+  historialPrevio.forEach(function (m) { addMessage(m.x, m.c, { ts: m.t }); });
 
   function addTyping() {
     const div = document.createElement('div');
@@ -249,7 +309,7 @@
     if (el) el.remove();
   }
 
-  addMessage('¡Hola! 👋 Soy el asistente de pedidos de NASE para comerciales.\nDime el cliente y lo que quieres pedirle, por ejemplo:\n"Apunta un pedido para Casa Odón: 2 papel chemine 800"\nTambién puedes mantener pulsado el micrófono y decírmelo hablando.', 'bot');
+  if (historialPrevio.length === 0) addMessage('¡Hola! 👋 Soy el asistente de pedidos de NASE para comerciales.\nDime el cliente y lo que quieres pedirle, por ejemplo:\n"Apunta un pedido para Casa Odón: 2 papel chemine 800"\nTambién puedes mantener pulsado el micrófono y decírmelo hablando.', 'bot', { noGuardar: true });
 
   async function sendToAgent(text) {
     sendBtn.disabled = true;
@@ -269,7 +329,7 @@
       addMessage(data.output || data.text || 'No he recibido respuesta, inténtalo de nuevo.', 'bot');
     } catch (err) {
       removeTyping();
-      addMessage('Error de conexión. Comprueba tu internet e inténtalo de nuevo.', 'error');
+      addMessage('Se ha cortado la conexión y no me ha llegado la respuesta. Si estabas confirmando un pedido, puede que ya esté creado: pregúntame "¿qué pedidos hay hoy?" antes de repetirlo.', 'error');
     } finally {
       sendBtn.disabled = false;
     }

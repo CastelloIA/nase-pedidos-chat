@@ -170,6 +170,9 @@
   #sendBtn { background: var(--nase-secondary); }
   #sendBtn:disabled { background: #b7c2c8; cursor: default; }
   #micBtn { background: var(--nase-primary); }
+  #fotoBtn { background: var(--nase-primary); }
+  #fotoBtn:disabled { background: #b7c2c8; cursor: default; }
+  .msg img.fotoPedido { display: block; max-width: 180px; max-height: 220px; border-radius: 8px; margin-bottom: 6px; }
   #micBtn.recording { background: var(--danger); animation: pulse 1s infinite; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(192,57,43,.45); } 70% { box-shadow: 0 0 0 10px rgba(192,57,43,0); } 100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); } }
   .micHint {
@@ -188,7 +191,7 @@
   <img src="https://nasecanarias.es/wp-content/uploads/2023/09/NASE-Logo-2.png" alt="NASE">
   <div class="titles">
     <h1>Pedidos de Clientes</h1>
-    <p>Dicta el pedido de un cliente, por texto o por voz</p>
+    <p>Dicta el pedido de un cliente, por texto, por voz o con una foto</p>
   </div>
   <button id="newChatBtn" title="Borrar esta conversación y empezar una nueva">🔄 Nuevo pedido</button>
 </header>
@@ -198,6 +201,10 @@
 <footer>
   <div class="inputRow">
     <textarea id="textInput" rows="1" placeholder="Escribe el pedido..."></textarea>
+    <input type="file" id="fotoInput" accept="image/*" hidden>
+    <button class="round" id="fotoBtn" title="Enviar una foto del pedido">
+      <svg viewBox="0 0 24 24"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+    </button>
     <button class="round" id="micBtn" title="Mantén pulsado para hablar">
       <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
     </button>
@@ -212,6 +219,7 @@
 (function () {
   const CHAT_WEBHOOK = 'https://n8n.castelloia.com/webhook/nase-bot-pedidos-comercial/chat';
   const TRANSCRIBE_WEBHOOK = 'https://n8n.castelloia.com/webhook/nase-transcribir-audio-pedidos';
+  const IMAGEN_WEBHOOK = 'https://n8n.castelloia.com/webhook/nase-leer-imagen-pedidos';
 
   const messagesEl = document.getElementById('messages');
   const textInput = document.getElementById('textInput');
@@ -440,6 +448,98 @@
       addMessage('Error de conexión al transcribir el audio. Inténtalo de nuevo.', 'error');
     }
   }
+
+  // ---- Foto del pedido: se lee en el servidor y lo leido entra al bot como un mensaje mas (la foto no crea nada por si sola) ----
+  const fotoBtn = document.getElementById('fotoBtn');
+  const fotoInput = document.getElementById('fotoInput');
+  const HINT_MIC = 'Mantén pulsado el micrófono para grabar un audio';
+
+  // Las fotos del movil pesan muchos MB: se reducen antes de enviarlas (y un HEIC del iPhone sale como JPEG)
+  function reducirImagen(file) {
+    return new Promise(function (resolve, reject) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        const escala = Math.min(1, 2200 / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * escala);
+        canvas.height = Math.round(img.height * escala);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(function (blob) {
+          if (blob) resolve({ blob: blob, url: url }); else reject(new Error('sin imagen'));
+        }, 'image/jpeg', 0.88);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('formato')); };
+      img.src = url;
+    });
+  }
+
+  async function enviarFoto(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      addMessage('Ese archivo no es una imagen. Prueba con una foto o una captura.', 'error');
+      return;
+    }
+    fotoBtn.disabled = true;
+    micHint.textContent = 'Leyendo la foto…';
+    let previa = null;
+    try {
+      const red = await reducirImagen(file);
+      previa = red.url;
+      const form = new FormData();
+      form.append('data', red.blob, 'pedido.jpg');
+      const resp = await fetch(IMAGEN_WEBHOOK, { method: 'POST', body: form });
+      if (!resp.ok) {
+        addMessage('No he podido leer la foto (error ' + resp.status + '). Inténtalo de nuevo o escríbelo.', 'error');
+        return;
+      }
+      const data = await resp.json();
+      const leido = (data.text || '').trim();
+      if (!leido) {
+        addMessage('No veo ningún pedido en esa foto. Prueba con otra más clara o escríbelo.', 'error');
+        return;
+      }
+      // Lo que Ana haya escrito antes de elegir la foto va como aclaracion ("es para Pan de Peru")
+      const aclaracion = textInput.value.trim();
+      const texto = aclaracion ? leido + '\nAclaración de la comercial: ' + aclaracion : leido;
+      textInput.value = '';
+      textInput.style.height = 'auto';
+      const div = addMessage(texto, 'user');
+      const miniatura = document.createElement('img');
+      miniatura.className = 'fotoPedido';
+      miniatura.alt = 'Foto del pedido';
+      miniatura.src = previa;
+      previa = null;
+      div.insertBefore(miniatura, div.firstChild);
+      scrollToEnd();
+      sendToAgent(texto);
+    } catch (err) {
+      addMessage(err && err.message === 'formato'
+        ? 'No puedo abrir esa imagen en este navegador. Prueba con una captura o un JPG.'
+        : 'Error de conexión al leer la foto. Inténtalo de nuevo.', 'error');
+    } finally {
+      if (previa) URL.revokeObjectURL(previa);
+      micHint.textContent = HINT_MIC;
+      fotoBtn.disabled = false;
+    }
+  }
+
+  fotoBtn.addEventListener('click', function () { fotoInput.click(); });
+  fotoInput.addEventListener('change', function () {
+    const file = fotoInput.files && fotoInput.files[0];
+    fotoInput.value = '';
+    if (file) enviarFoto(file);
+  });
+  // Tambien pegando una captura con Ctrl+V en el cuadro de texto
+  textInput.addEventListener('paste', function (e) {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        enviarFoto(items[i].getAsFile());
+        return;
+      }
+    }
+  });
 
   micBtn.addEventListener('mousedown', startRecording);
   micBtn.addEventListener('mouseup', stopRecording);

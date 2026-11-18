@@ -145,7 +145,8 @@
   textarea#textInput {
     flex: 1;
     resize: none;
-    max-height: 110px;
+    max-height: 220px;
+    overflow-y: auto;
     min-height: 42px;
     padding: 10px 14px;
     border-radius: 20px;
@@ -200,7 +201,7 @@
 
 <footer>
   <div class="inputRow">
-    <textarea id="textInput" rows="1" placeholder="Escribe el pedido..."></textarea>
+    <textarea id="textInput" rows="1" enterkeyhint="enter" placeholder="Escribe el pedido..."></textarea>
     <input type="file" id="fotoInput" accept="image/*" hidden>
     <button class="round" id="fotoBtn" title="Enviar una foto del pedido">
       <svg viewBox="0 0 24 24"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
@@ -353,15 +354,10 @@
   }
 
   sendBtn.addEventListener('click', sendTextMessage);
-  textInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendTextMessage();
-    }
-  });
+  // Intro = salto de linea (como en un documento); solo se envia con el boton de enviar
   textInput.addEventListener('input', function () {
     textInput.style.height = 'auto';
-    textInput.style.height = Math.min(textInput.scrollHeight, 110) + 'px';
+    textInput.style.height = Math.min(textInput.scrollHeight, 220) + 'px';
   });
 
   let mediaRecorder = null;

@@ -192,7 +192,7 @@
   <img src="https://nasecanarias.es/wp-content/uploads/2023/09/NASE-Logo-2.png" alt="NASE">
   <div class="titles">
     <h1>Pedidos de Clientes</h1>
-    <p>Dicta el pedido de un cliente, por texto, por voz o con una foto</p>
+    <p>Dicta el pedido de un cliente, por texto, por voz, con una foto o con un audio de WhatsApp</p>
   </div>
   <button id="newChatBtn" title="Borrar esta conversación y empezar una nueva">🔄 Nuevo pedido</button>
 </header>
@@ -202,8 +202,8 @@
 <footer>
   <div class="inputRow">
     <textarea id="textInput" rows="1" enterkeyhint="enter" placeholder="Escribe el pedido..."></textarea>
-    <input type="file" id="fotoInput" accept="image/*" hidden>
-    <button class="round" id="fotoBtn" title="Enviar una foto del pedido">
+    <input type="file" id="fotoInput" accept="image/*,audio/*,.opus,.ogg,.m4a,.aac,.mp3,.wav" hidden>
+    <button class="round" id="fotoBtn" title="Enviar una foto o un audio del pedido (por ejemplo, uno reenviado de WhatsApp)">
       <svg viewBox="0 0 24 24"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
     </button>
     <button class="round" id="micBtn" title="Mantén pulsado para hablar">
@@ -519,11 +519,76 @@
     }
   }
 
+  // ---- Audio ya grabado (p. ej. reenviado de WhatsApp): se transcribe y entra al bot como un mensaje mas ----
+  // El transcriptor reconoce el formato por la extension: .opus de WhatsApp es un .ogg; lo demas que no conozca
+  // (.aac, .amr, .caf...) se convierte aqui a .wav antes de enviarlo.
+  const EXT_AUDIO_OK = ['ogg', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'wav', 'webm', 'flac'];
+  const EXT_AUDIO = EXT_AUDIO_OK.concat(['opus', 'oga', 'aac', 'amr', '3gp', 'caf', 'wma', 'aif', 'aiff']);
+  function extension(nombre) { const p = String(nombre || '').toLowerCase().split('.'); return p.length > 1 ? p.pop() : ''; }
+  function esAudio(file) { return String(file.type || '').startsWith('audio/') || EXT_AUDIO.indexOf(extension(file.name)) !== -1; }
+  async function aWav(file) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!AC || !OAC) throw new Error('formato');
+    const ctx = new AC();
+    const buf = await file.arrayBuffer();
+    let audio;
+    try { audio = await new Promise(function (res, rej) { ctx.decodeAudioData(buf, res, function () { rej(new Error('formato')); }); }); }
+    finally { try { ctx.close(); } catch (e) {} }
+    const sr = 16000, n = Math.max(1, Math.ceil(audio.duration * sr));
+    const off = new OAC(1, n, sr);
+    const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start(0);
+    const r = await off.startRendering();
+    const d = r.getChannelData(0), b = new ArrayBuffer(44 + d.length * 2), v = new DataView(b);
+    const txt = function (o, s) { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    txt(0, 'RIFF'); v.setUint32(4, 36 + d.length * 2, true); txt(8, 'WAVE'); txt(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); txt(36, 'data'); v.setUint32(40, d.length * 2, true);
+    for (let i = 0; i < d.length; i++) { const s = Math.max(-1, Math.min(1, d[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+    return new Blob([b], { type: 'audio/wav' });
+  }
+  async function enviarAudioArchivo(file) {
+    fotoBtn.disabled = true;
+    micHint.textContent = 'Transcribiendo el audio…';
+    try {
+      let ext = extension(file.name);
+      if (ext === 'opus' || ext === 'oga') ext = 'ogg';
+      if (EXT_AUDIO_OK.indexOf(ext) === -1) {
+        const porTipo = { 'audio/ogg': 'ogg', 'audio/opus': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/flac': 'flac' }[String(file.type || '').split(';')[0]];
+        ext = porTipo || '';
+      }
+      let blob = file;
+      if (!ext) { blob = await aWav(file); ext = 'wav'; }
+      if (blob.size > 24 * 1024 * 1024) { addMessage('Ese audio es demasiado largo para transcribirlo. Prueba con uno más corto o díctalo con el micrófono.', 'error'); return; }
+      const form = new FormData();
+      form.append('data', blob, 'audio.' + ext);
+      const resp = await fetch(TRANSCRIBE_WEBHOOK, { method: 'POST', body: form });
+      if (!resp.ok) { addMessage('No he podido transcribir el audio (error ' + resp.status + '). Inténtalo de nuevo o escríbelo.', 'error'); return; }
+      const data = await resp.json();
+      const leido = (data.text || '').trim();
+      if (!leido) { addMessage('No he entendido el audio. Inténtalo de nuevo o escríbelo.', 'error'); return; }
+      // Lo que se haya escrito antes de elegir el audio va como aclaracion ("es para El Salitre")
+      const aclaracion = textInput.value.trim();
+      const texto = aclaracion ? leido + '\nAclaración de la comercial: ' + aclaracion : leido;
+      textInput.value = '';
+      textInput.style.height = 'auto';
+      addMessage(texto, 'user');
+      sendToAgent(texto);
+    } catch (err) {
+      addMessage(err && err.message === 'formato'
+        ? 'No puedo abrir ese audio en este navegador. Díctalo con el micrófono o escríbelo.'
+        : 'Error de conexión al transcribir el audio. Inténtalo de nuevo.', 'error');
+    } finally {
+      micHint.textContent = HINT_MIC;
+      fotoBtn.disabled = false;
+    }
+  }
+
   fotoBtn.addEventListener('click', function () { fotoInput.click(); });
   fotoInput.addEventListener('change', function () {
     const file = fotoInput.files && fotoInput.files[0];
     fotoInput.value = '';
-    if (file) enviarFoto(file);
+    if (!file) return;
+    if (esAudio(file)) enviarAudioArchivo(file); else enviarFoto(file);
   });
   // Tambien pegando una captura con Ctrl+V en el cuadro de texto
   textInput.addEventListener('paste', function (e) {
